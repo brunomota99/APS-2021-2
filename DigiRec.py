@@ -4,6 +4,10 @@ from os import listdir
 from os.path import isfile
 
 def transformToGrayScale(img):
+    """
+    Função que recebe uma imagem colorida no formato 
+    RGB e trnasforma em uma imagem de tons de cinza
+    """
     imgGs = img.copy()
     palette =  img.getpalette()
 
@@ -16,13 +20,17 @@ def transformToGrayScale(img):
             if palette != None:
                 pixel = palette[pixel : pixel + 3]
 
-            averageValue = int(sum(pixel) / len(pixel))
+            averageValue = int(sum(pixel) / len(pixel)) # Para cada pixel é calculado a média dos 
+                                                        # valores de RGB para serem utilizados na imagem em tons de cinza 
 
             imgGs.putpixel((x,y), tuple([averageValue] * 3))
     
     return imgGs
 
 def createHistogramGS(imgGs, quantGrayShades = 256):
+    """
+    Faz um histograma da imagem em tons de cinza passada
+    """
     listHistogram = [0] * quantGrayShades
 
     palette = imgGs.getpalette()
@@ -40,6 +48,11 @@ def createHistogramGS(imgGs, quantGrayShades = 256):
     return listHistogram
 
 def histogramContrastEnhancedGS(img, quantGrayShades = 256):
+    """
+    Essa função realiza o aumento de contraste da imagem 
+    passada, utilizando o método de aumento de contraste 
+    pelo histograma da imagem inteira
+    """
     imgCE = img.copy()
 
     listHisto = createHistogramGS(imgCE, quantGrayShades)
@@ -66,6 +79,9 @@ def histogramContrastEnhancedGS(img, quantGrayShades = 256):
     return imgCE
 
 def matrixMultiply(matA, matB):
+    """
+    Calcula a multiplicação de duas matrizes
+    """
     if len(matA[0]) != len(matB):
         return None
 
@@ -90,6 +106,10 @@ def displayTextMatrix(mat):
         print(row[:-1])
 
 def edgeDetectSobelOperatorGS(img, sobelOpCenterVal):
+    """
+    Função que realizada detecção de bordas, utilizando o
+    kernel de sobel
+    """
     imgSo = img.copy()
 
     kernelX = matrixMultiply([[1],[sobelOpCenterVal],[1]], [[1,0,-1]])
@@ -112,7 +132,13 @@ def edgeDetectSobelOperatorGS(img, sobelOpCenterVal):
     return imgSo
 
 def imgConvolutionMatrixGS(img, coordKernelCenter, kernel):
+    """
+    Essa função calcula a covolução do kernel passado com a 
+    imagem passada
+    """
     kernelRadius = int(len(kernel) / 2)
+
+    # Calcula limite inicial do kernel, essas coordenadas são baseadas na imagem passada
     coordKernerInit = (coordKernelCenter[0] - kernelRadius, coordKernelCenter[1] - kernelRadius)
 
     palette = img.getpalette()
@@ -131,6 +157,9 @@ def imgConvolutionMatrixGS(img, coordKernelCenter, kernel):
     return convVal
 
 def imgThresholding(img, limiteIniLim = 0, limiteFimLim = 255):
+    """
+    Essa função realizada a limearização da imagem
+    """
     imgLim = img.copy()
 
     palette = imgLim.getpalette()
@@ -150,6 +179,14 @@ def imgThresholding(img, limiteIniLim = 0, limiteFimLim = 255):
     return imgLim
 
 def imgSegment(img):
+    """
+    Função realiza a segmentação da imagem passada, a 
+    segmentação é feita pesquisando os maiores valores de 
+    preto na imagem com as coordenas mais estremas da imagem
+    para cortar a imagem no tamanho que apenas engloba partes 
+    com informações relevantes
+    """
+
     boxCoord = {
         "left": {
             "coord" : img.width # min X
@@ -209,6 +246,78 @@ def imgSegment(img):
 
     return img.crop(coord)
 
+def treatDigital(imgUntreated, debug = False):
+    """
+    Essa função trata a imagem da digital para poder ser utilizada pelo sistema 
+    """
+    img = transformToGrayScale(imgUntreated)
+    if debug:
+        img.save("./debug_steps/digi_GS.jpeg")
+
+    img = histogramContrastEnhancedGS(img, 256)
+    if debug:
+        img.save("./debug_steps/digi_CE.jpeg")
+
+    img = edgeDetectSobelOperatorGS(img, 2)
+    if debug:
+        img.save("./debug_steps/digi_SO.jpeg")
+
+    # Tira dois pixels das bordas que não são tratados pelo utilização direta do kernel 
+    # de sobel para não atrapalhar na limiarização da imagem 
+    img = img.crop((2, 2, img.width - 2, img.height - 2))
+
+    # Só transforma em pixels pretos 40% dos pixels mais claros tratados pelo kernel de sobel
+    img = imgThresholding(img, 180, 255) 
+    if debug:
+        img.save("./debug_steps/digi_TH.jpeg")
+
+    img = imgSegment(img)
+    if debug:
+        img.save("./debug_steps/digi_SE.jpeg")
+
+    return img
+
+def digiCompare(digis, debug = False):
+    """
+    Essa função realiza a comparação de duas imagens de 
+    digitais que foram tratadas pelo sistema, coparando as 
+    posições dos pixels pretos da primeira imagem com a segunda 
+    e retornando uma porcentagem de igualdade dos pixels base
+    no total de pixels pretos da primeira imagem
+    """
+    max_width = max([digi.width for digi in digis])
+    max_height = max([digi.height for digi in digis])
+
+    for i in range(len(digis)):
+        digis[i] = digis[i].resize((max_width, max_height))
+
+        if debug:
+            digis[i].save("./debug_steps/digi_"+str(i)+"_re.jpeg")
+
+    pixel = []
+    palette = [digi.getpalette() for digi in digis]
+
+    equalPixelsCount = 0
+    totalBlackPixels = 0
+    for y in range(max_height):
+        for x in range(max_width):
+            pixel = []
+
+            for i in range(len(digis)):
+                pixel.append(digis[i].getpixel((x,y)))
+
+                if palette[i] != None:
+                    pixel[i] = palette[i][pixel[i] : pixel[i] + 3]
+
+                pixel[i] = pixel[i][0]
+
+            if pixel[0] == 0:
+                totalBlackPixels += 1
+                equalPixelsCount += 1 if pixel[1] == pixel[0] else 0
+            
+
+    return equalPixelsCount / totalBlackPixels
+
 def boxBlur(img, kernelRadius):
     imgME = img.copy()
 
@@ -255,68 +364,7 @@ def gaussBlur(img, kernelRadius, desvio):
 
     return imgGA
 
-def treatDigital(imgUntreated, debug = False):
-    img = transformToGrayScale(imgUntreated)
-    if debug:
-        img.save("./debug_steps/digi_GS.jpeg")
 
-    img = histogramContrastEnhancedGS(img, 256)
-    if debug:
-        img.save("./debug_steps/digi_CE.jpeg")
-
-    #img = gaussBlur(img, 1, .55)
-    #if debug:
-    #    img.save("./debug_steps/digi_GA.jpeg")
-
-    img = edgeDetectSobelOperatorGS(img, 2)
-    if debug:
-        img.save("./debug_steps/digi_SO.jpeg")
-
-    img = img.crop((2, 2, img.width - 2, img.height - 2))
-
-    img = imgThresholding(img, 180, 255) # 40% dos pixels mais claros tratados pelo kernel de sobel
-    if debug:
-        img.save("./debug_steps/digi_TH.jpeg")
-
-    img = imgSegment(img)
-    if debug:
-        img.save("./debug_steps/digi_SE.jpeg")
-
-    return img
-
-def digiCompare(digis, debug = False):
-    max_width = max([digi.width for digi in digis])
-    max_height = max([digi.height for digi in digis])
-
-    for i in range(len(digis)):
-        digis[i] = digis[i].resize((max_width, max_height))
-
-        if debug:
-            digis[i].save("./debug_steps/digi_"+str(i)+"_re.jpeg")
-
-    pixel = []
-    palette = [digi.getpalette() for digi in digis]
-
-    equalPixelsCount = 0
-    totalBlackPixels = 0
-    for y in range(max_height):
-        for x in range(max_width):
-            pixel = []
-
-            for i in range(len(digis)):
-                pixel.append(digis[i].getpixel((x,y)))
-
-                if palette[i] != None:
-                    pixel[i] = palette[i][pixel[i] : pixel[i] + 3]
-
-                pixel[i] = pixel[i][0]
-
-            if pixel[0] == 0:
-                totalBlackPixels += 1
-                equalPixelsCount += 1 if pixel[1] == pixel[0] else 0
-            
-
-    return equalPixelsCount / totalBlackPixels
 
 if __name__ == "__main__":
     print("\n\nBem vindo ao DigiRec (Sistema de reconhecimento de digitais)")
